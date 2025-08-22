@@ -1,0 +1,11 @@
+# Streamlit for UI
+streamlit>=1.29.0
+
+# PDF text extraction
+pdfplumber>=0.9.0
+
+# PDF export
+fpdf>=1.7.2
+
+# Google Generative AI SDK
+google-generativeai>=0.8.0
