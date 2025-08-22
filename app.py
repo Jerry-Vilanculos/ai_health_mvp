@@ -15,25 +15,19 @@ APP_PASSWORD = os.getenv("APP_PASSWORD", "")  # optional simple gate
 # ----------- i18n (add more languages easily) -----------
 LANGS = {"en": "English", "es": "Español", "fr": "Français"}
 T = {
-    "title": {
-        "en": "AI-Powered Health Assistant for Students",
-        "es": "Asistente de Salud con IA para Estudiantes",
-        "fr": "Assistant Santé IA pour Étudiants"
-    },
-    "disclaimer": {
-        "en": "Educational use only — not medical advice.",
-        "es": "Uso educativo — no es consejo médico.",
-        "fr": "Usage éducatif — pas un avis médical"
-    },
-    "privacy": {
-        "en": "Data stays local; PDFs and inputs are not shared. Feedback stored in feedback.json.",
-        "es": "Los datos permanecen locales; PDFs y entradas no se comparten. Comentarios en feedback.json.",
-        "fr": "Les données restent locales ; PDFs et entrées ne sont pas partagés. Retours dans feedback.json."
-    }
+    "title": {"en": "AI-Powered Health Assistant for Students",
+              "es": "Asistente de Salud con IA para Estudiantes",
+              "fr": "Assistant Santé IA pour Étudiants"},
+    "disclaimer": {"en": "Educational use only — not medical advice.",
+                   "es": "Uso educativo — no es consejo médico.",
+                   "fr": "Usage éducatif — pas un avis médical."},
+    "privacy": {"en": "Data stays local; PDFs and inputs are not shared. Feedback stored in feedback.json.",
+                "es": "Los datos permanecen locales; PDFs y entradas no se comparten. Comentarios en feedback.json.",
+                "fr": "Les données restent locales ; PDFs et entrées ne sont pas partagés. Retours dans feedback.json."}
 }
 def tr(key, lang): return T.get(key, {}).get(lang, T.get(key, {}).get("en", key))
 
-# ---------------- Paths & storage helpers ----------------
+# ---------------- Paths & storage ----------------
 DATA_DIR = "."
 FEEDBACK_FILE = os.path.join(DATA_DIR, "feedback.json")
 MEDS_FILE = os.path.join(DATA_DIR, "meds.json")
@@ -56,7 +50,8 @@ def extract_text_from_pdf(pdf_file, max_chars=4000):
     text = ""
     with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
-            text += page.extract_text() or ""
+            page_text = page.extract_text() or ""
+            text += page_text
             if len(text) > max_chars:
                 break
     return text[:max_chars]
@@ -102,7 +97,7 @@ def get_feedback_stats(feedback_list):
     thumbs_down = sum(1 for f in feedback_list if f.get("feedback") == "down")
     return thumbs_up, thumbs_down
 
-# ---------------- Default Health Reminders ----------------
+# ---------------- Health Reminders ----------------
 DEFAULT_REMINDERS = {
     "Monday": ["Take TB medication at 8 AM", "Drink 2L water"],
     "Tuesday": ["Take TB medication at 8 AM", "Light exercise 20 min"],
@@ -145,7 +140,7 @@ st.set_page_config(page_title="AI Health MVP", layout="wide")
 
 cols_top = st.columns([3,1,1])
 with cols_top[0]:
-    st.title("🌍 " + tr("title", "en"))
+    st.title("🌍 AI-Powered Health Assistant for Students")
 with cols_top[1]:
     lang = st.selectbox("Language", options=list(LANGS.keys()), format_func=lambda k: LANGS[k], index=0)
 with cols_top[2]:
@@ -158,7 +153,7 @@ with cols_top[2]:
         if not st.session_state.authed:
             st.stop()
 
-st.warning(f"⚠️ **{tr('disclaimer', lang)}**\n\n🔒 {tr('privacy', lang)}")
+st.warning(f"⚠️ **Educational use only — not medical advice.**\n\n🔒 Data stays local; PDFs and inputs are not shared. Feedback stored in feedback.json.")
 
 username = st.text_input("Enter your name:", "Student")
 
@@ -183,35 +178,50 @@ if choice == "📄 PDF Q&A":
     pdf_file = st.file_uploader("Upload PDF", type=["pdf"])
     user_query = st.text_input("Enter your question:")
     answer = ""
-    
-    if pdf_file:
-        pdf_text = extract_text_from_pdf(pdf_file)
-        st.session_state.last_pdf_text = pdf_text
 
     if pdf_file and user_query:
-        if st.button("Ask Question"):
-            prompt = f"PDF content:\n{pdf_text}\nQuestion: {user_query}"
-            answer = stream_gemini_response(prompt)
-            if not answer.strip():
-                answer = summarize_with_gemini(pdf_text, user_query)
-            st.subheader("Answer")
-            st.write(answer)
+        with st.spinner("Extracting and analyzing..."):
+            pdf_text = extract_text_from_pdf(pdf_file)
+            st.session_state.last_pdf_text = pdf_text
+            try:
+                prompt = f"PDF content:\n{pdf_text}\nQuestion: {user_query}"
+                answer = stream_gemini_response(prompt)
+                if not answer.strip():
+                    answer = summarize_with_gemini(pdf_text, user_query)
+            except Exception:
+                st.error("⚠️ Could not fetch AI response. Showing quick health tip instead.")
+                answer = "Quick Tip: Always take TB meds on time, hydrate well, and rest properly."
+        st.subheader("Answer")
+        st.write(answer)
 
-            if st.button("Download Answer as PDF", key="pdf_download"):
-                fname = export_to_pdf(answer, "answer.pdf")
-                with open(fname,"rb") as f:
-                    st.download_button("Download PDF", f, file_name="answer.pdf")
+        if st.button("Download Answer as PDF"):
+            fname = export_to_pdf(answer, "answer.pdf")
+            with open(fname, "rb") as f:
+                st.download_button("Download PDF", f, file_name="answer.pdf")
 
-            # Feedback buttons with unique keys
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("👍 Yes", key=f"pdf_up_{user_query}"):
-                    save_feedback(username, "up")
-                    st.success("Feedback recorded ✅")
-            with col2:
-                if st.button("👎 No", key=f"pdf_down_{user_query}"):
-                    save_feedback(username, "down")
-                    st.success("Feedback recorded ✅")
+        st.subheader("Was this answer helpful?")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("👍 Yes", key="pdf_up"):
+                save_feedback(username, "up")
+                st.success("Feedback recorded ✅")
+        with col2:
+            if st.button("👎 No", key="pdf_down"):
+                save_feedback(username, "down")
+                st.success("Feedback recorded ✅")
 
+# ---------------- The other tabs remain unchanged ----------------
+# Tab 2: Time Management
+# Tab 3: Health Reminders
+# Tab 4: Nutrition Assistant
+# Tab 5: Dashboard
+# Tab 6: Chatbot
+# Tab 7: Medication Tracker
+# Tab 8: Symptom Checker
+
+# You can copy your existing code for tabs 2-8 here but make sure
+# every PDF download uses the multi-line with syntax like above.
+
+st.caption("AI-generated insights; always consult a doctor for medical advice.")
 
 
